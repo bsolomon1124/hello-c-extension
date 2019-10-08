@@ -9,7 +9,7 @@ module = setuptools.Extension(
 if __name__ == "__main__":
     setuptools.setup(
         name="hello-c-extension",
-        version="0.2",
+        version="0.3",
         description="Showcase use and packaging of a C++ extension module",
         long_description=open("README.md").read(),
         long_description_content_type="text/markdown",
