@@ -2,16 +2,12 @@
 #include <Python.h>
 
 static PyObject *
-foo(PyObject *self, PyObject *args) {
-    /* noargs() */
-    if (!PyArg_ParseTuple(args, "")) {
-        return NULL;
-    }
+foo(PyObject *self, PyObject *Py_UNUSED(ignored)) {
     return PyLong_FromLong(5);
 }
 
 static PyMethodDef FooMethods[] = {
-    {"foo",  foo,      METH_VARARGS,  "Do the foo"},
+    {"foo",  (PyCFunction)foo,        METH_NOARGS,  "Do the foo"},
     {NULL,   NULL,     0,             NULL}
 };
 
