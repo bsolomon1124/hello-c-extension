@@ -1,0 +1,107 @@
+# Publish a tagged release: build -> publish to PyPI via OIDC -> Sigstore
+# sign -> GitHub Release (with SBOM). Triggers only on tag pushes.
+#
+# Supply-chain hardening:
+#   - workflow permissions default to empty; jobs opt in explicitly
+#   - persist-credentials: false on checkout
+#   - all actions pinned to full commit SHA (comments show the human version)
+#   - PyPI publish uses Trusted Publishing (OIDC) -- no API token stored
+#   - GitHub environment "pypi" allows manual-approval protection rules
+#   - Sigstore signing is keyless (OIDC)
+#   - SBOM excluded from the PyPI upload; attached to the GitHub Release
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions: {}
+
+jobs:
+  build:
+    name: Build sdist + wheel + SBOM
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
+        with:
+          enable-cache: true
+
+      - name: Build distributions
+        run: uv build
+
+      - name: Export SBOM (locked requirements)
+        run: uv export --no-hashes --format requirements-txt -o sbom.txt
+
+      - name: Upload dist/
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sbom
+          path: sbom.txt
+          if-no-files-found: error
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/hello-c-extension
+    permissions:
+      id-token: write # OIDC token for PyPI Trusted Publishing
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish via Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
+
+  sign-and-release:
+    name: Sigstore sign + GitHub Release
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # Sigstore OIDC
+      contents: write # create the GitHub Release
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dist
+          path: dist/
+
+      - name: Download SBOM
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: sbom
+          path: .
+
+      - name: Sign artifacts with Sigstore
+        uses: sigstore/gh-action-sigstore-python@04cffa1d795717b140764e8b640de88853c92acc # v3.3.0
+        with:
+          inputs: ./dist/*.tar.gz ./dist/*.whl
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          files: |
+            dist/*
+            sbom.txt
+          generate_release_notes: true
+          fail_on_unmatched_files: true
