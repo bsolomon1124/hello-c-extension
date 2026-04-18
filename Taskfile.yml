@@ -1,0 +1,58 @@
+version: "3"
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  sync:
+    desc: Create .venv and install project + dev deps
+    cmds:
+      - uv sync
+
+  test:
+    desc: Run tests with coverage (fails under 75%)
+    cmds:
+      - uv run pytest
+
+  lint:
+    desc: Lint + format check + type check
+    cmds:
+      - uv run ruff check .
+      - uv run ruff format --check .
+      - uv run ty check
+
+  format:
+    desc: Auto-format + apply safe fixes
+    cmds:
+      - uv run ruff format .
+      - uv run ruff check --fix .
+
+  build:
+    desc: Build sdist + wheel
+    cmds:
+      - uv build
+
+  hooks:
+    desc: Run all pre-commit hooks via prek
+    cmds:
+      - uvx prek run --all-files
+
+  sbom:
+    desc: Export dependency SBOM (locked requirements)
+    cmds:
+      - uv export --no-hashes --format requirements-txt -o sbom.txt
+
+  clean:
+    desc: Remove build and cache artifacts
+    cmds:
+      - rm -rf build dist .coverage .pytest_cache .ruff_cache .ty_cache sbom.txt
+      - find . -name '*.egg-info' -type d -exec rm -rf {} +
+      - find . -name '__pycache__' -type d -exec rm -rf {} +
+      - find src -name '*.so' -delete
+
+  check:
+    desc: Full verification — lint, tests, build
+    deps: [lint, test, build]
