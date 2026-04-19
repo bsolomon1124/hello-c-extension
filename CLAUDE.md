@@ -65,3 +65,7 @@ environment named `pypi`.
   module reprs break.
 - Designated-initializers for structs (`.m_base = ...`) require C++20; we
   use positional initialization for portability across compilers.
+
+## Pull request titles
+
+Follow Conventional Commits format: `<type>: <description>` (e.g. `chore: update dependencies`, `fix: handle edge case`, `feat: add new export`).
