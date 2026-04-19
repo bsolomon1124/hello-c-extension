@@ -33,8 +33,12 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Build distributions
-        run: uv build
+      # sdist-only: PyPI rejects generic `linux_x86_64` wheel tags, and
+      # `uv build` on Linux produces one. Building platform-specific
+      # manylinux/macOS/Windows wheels requires cibuildwheel, which is a
+      # future enhancement. For now users compile from source on install.
+      - name: Build sdist
+        run: uv build --sdist
 
       - name: Export SBOM (locked requirements)
         run: uv export --no-hashes --format requirements-txt -o sbom.txt
@@ -95,7 +99,7 @@ jobs:
       - name: Sign artifacts with Sigstore
         uses: sigstore/gh-action-sigstore-python@04cffa1d795717b140764e8b640de88853c92acc # v3.3.0
         with:
-          inputs: ./dist/*.tar.gz ./dist/*.whl
+          inputs: ./dist/*.tar.gz
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
