@@ -129,3 +129,14 @@ skip_covered = false
 
 [tool.ty.src]
 include = ["src"]
+
+[tool.cibuildwheel]
+# CPython 3.10-3.14 on 64-bit Linux (manylinux), macOS, and Windows.
+build = "cp310-* cp311-* cp312-* cp313-* cp314-*"
+skip = ["*-musllinux_*", "*_i686", "*-win32"]
+# Verify the built wheel actually imports on the target.
+test-command = "python -c \"from cmod import CONSTANT, _cmod, pymod; assert _cmod.foo() == 5; assert CONSTANT == 10; assert _cmod.__name__ == 'cmod._cmod'; pymod.hello()\""
+
+[tool.cibuildwheel.macos]
+# Fat wheel covering both Apple Silicon and Intel Macs.
+archs = "universal2"
