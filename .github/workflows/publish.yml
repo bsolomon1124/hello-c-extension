@@ -1,10 +1,12 @@
-# Publish a tagged release: build -> publish to PyPI via OIDC -> Sigstore
-# sign -> GitHub Release (with SBOM). Triggers only on tag pushes.
+# Publish a tagged release:
+#   sdist + SBOM on Linux, portable wheels via cibuildwheel on
+#   Linux/macOS/Windows -> PyPI via Trusted Publishing (OIDC) -> Sigstore
+#   sign -> GitHub Release with SBOM. Triggers only on tag pushes.
 #
 # Supply-chain hardening:
 #   - workflow permissions default to empty; jobs opt in explicitly
-#   - persist-credentials: false on checkout
-#   - all actions pinned to full commit SHA (comments show the human version)
+#   - persist-credentials: false on every checkout
+#   - all actions pinned to full commit SHA (comments show human versions)
 #   - PyPI publish uses Trusted Publishing (OIDC) -- no API token stored
 #   - GitHub environment "pypi" allows manual-approval protection rules
 #   - Sigstore signing is keyless (OIDC)
@@ -19,8 +21,8 @@ on:
 permissions: {}
 
 jobs:
-  build:
-    name: Build sdist + wheel + SBOM
+  sdist:
+    name: Build sdist + SBOM
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -33,21 +35,17 @@ jobs:
         with:
           enable-cache: true
 
-      # sdist-only: PyPI rejects generic `linux_x86_64` wheel tags, and
-      # `uv build` on Linux produces one. Building platform-specific
-      # manylinux/macOS/Windows wheels requires cibuildwheel, which is a
-      # future enhancement. For now users compile from source on install.
       - name: Build sdist
         run: uv build --sdist
 
       - name: Export SBOM (locked requirements)
         run: uv export --no-hashes --format requirements-txt -o sbom.txt
 
-      - name: Upload dist/
+      - name: Upload sdist
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: dist
-          path: dist/
+          name: dist-sdist
+          path: dist/*.tar.gz
           if-no-files-found: error
 
       - name: Upload SBOM
@@ -57,9 +55,33 @@ jobs:
           path: sbom.txt
           if-no-files-found: error
 
+  wheels:
+    name: Build wheels (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@8d2b08b68458a16aeb24b64e68a09ab1c8e82084 # v3.4.1
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist-wheels-${{ matrix.os }}
+          path: wheelhouse/*.whl
+          if-no-files-found: error
+
   publish-pypi:
     name: Publish to PyPI
-    needs: build
+    needs: [sdist, wheels]
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -67,10 +89,11 @@ jobs:
     permissions:
       id-token: write # OIDC token for PyPI Trusted Publishing
     steps:
-      - name: Download distributions
+      - name: Download all distributions
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: dist
+          pattern: dist-*
+          merge-multiple: true
           path: dist/
 
       - name: Publish via Trusted Publishing
@@ -84,10 +107,11 @@ jobs:
       id-token: write # Sigstore OIDC
       contents: write # create the GitHub Release
     steps:
-      - name: Download distributions
+      - name: Download all distributions
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: dist
+          pattern: dist-*
+          merge-multiple: true
           path: dist/
 
       - name: Download SBOM
@@ -99,7 +123,7 @@ jobs:
       - name: Sign artifacts with Sigstore
         uses: sigstore/gh-action-sigstore-python@04cffa1d795717b140764e8b640de88853c92acc # v3.3.0
         with:
-          inputs: ./dist/*.tar.gz
+          inputs: ./dist/*.tar.gz ./dist/*.whl
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
